@@ -12,8 +12,7 @@ By default, it performs the following tasks:
 
 https://github.com/user-attachments/assets/a4a1442d-a404-4750-9deb-a09fb2d91008
 
-```markdown
-# Models Used in Agent Dino
+### Models Used in Agent Dino
 
 | Model Type       | Model Name/Description                     | Link                                                                 |
 |------------------|-------------------------------------------|----------------------------------------------------------------------|
@@ -24,4 +23,4 @@ https://github.com/user-attachments/assets/a4a1442d-a404-4750-9deb-a09fb2d91008
 | **Image Generation** | RealVisXL_V5.0_Lightning             | [Hugging Face](https://huggingface.co/SG161222/RealVisXL_V5.0_Lightning) |
 | **3D Generation** | OpenAI Shap-E                           | [Hugging Face](https://huggingface.co/openai/shap-e)                 |
 | **Web Search**   | DuckDuckGo, SmolAgent                    | N/A                                                                  |
-```
+
