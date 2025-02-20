@@ -11,4 +11,6 @@ By default, it performs the following tasks:
 `@yolo` : Object Detection
 
 
-https://cdn-uploads.huggingface.co/production/uploads/65bb837dbfb878f46c77de4c/BipCaRTkxCPC_jlhy29hJ.mp4
+
+<video src='https://cdn-uploads.huggingface.co/production/uploads/65bb837dbfb878f46c77de4c/BipCaRTkxCPC_jlhy29hJ.mp4' width=180/>
+
