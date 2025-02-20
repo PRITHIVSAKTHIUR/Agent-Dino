@@ -10,8 +10,5 @@ By default, it performs the following tasks:
  `@tts1-♀`, `@tts2-♂`: Voice generation (Female and Male voices).  
 `@yolo` : Object Detection
 
-
-
-
-https://github.com/user-attachments/assets/9e860134-62bc-4804-a2b1-6745846b0155
+https://github.com/user-attachments/assets/a4a1442d-a404-4750-9deb-a09fb2d91008
 
