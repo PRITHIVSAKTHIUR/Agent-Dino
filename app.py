@@ -634,6 +634,7 @@ demo = gr.ChatInterface(
         [{"text": "@yolo", "files": ["examples/yolo.jpeg"]}],
         ["@rAgent Explain how a binary search algorithm works."],
         ["@web Is Grok-3 Beats DeepSeek-R1 at Reasoning ?"],
+        ["@tts1 Explain Tower of Hanoi"],
     ],
     cache_examples=False,
     type="messages",
