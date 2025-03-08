@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image
 import edge_tts
 import trimesh
+import soundfile as sf  # New import for audio file reading
 
 import supervision as sv
 from ultralytics import YOLO as YOLODetector
@@ -35,6 +36,7 @@ from diffusers import StableDiffusionXLPipeline, EulerAncestralDiscreteScheduler
 from diffusers import ShapEImg2ImgPipeline, ShapEPipeline
 from diffusers.utils import export_to_ply
 
+os.system('pip install backoff')
 # Global constants and helper functions
 
 MAX_SEED = np.iinfo(np.int32).max
@@ -53,6 +55,26 @@ def glb_to_data_url(glb_path: str) -> str:
         data = f.read()
     b64_data = base64.b64encode(data).decode("utf-8")
     return f"data:model/gltf-binary;base64,{b64_data}"
+
+def progress_bar_html(label: str) -> str:
+    """
+    Returns an HTML snippet for a thin progress bar with a label.
+    The progress bar is styled as a dark red animated bar.
+    """
+    return f'''
+<div style="display: flex; align-items: center;">
+    <span style="margin-right: 10px; font-size: 14px;">{label}</span>
+    <div style="width: 110px; height: 5px; background-color: #AFEEEE; border-radius: 2px; overflow: hidden;">
+        <div style="width: 100%; height: 100%; background-color: #00FFFF; animation: loading 1.5s linear infinite;"></div>
+    </div>
+</div>
+<style>
+@keyframes loading {{
+    0% {{ transform: translateX(-100%); }}
+    100% {{ transform: translateX(100%); }}
+}}
+</style>
+    '''
 
 # Model class for Text-to-3D Generation (ShapE)
 
@@ -202,7 +224,7 @@ SYSTEM_PROMPT = """
         "2. **Code**: Write Python code to implement your solution.\n"
         "3. **Observation**: Analyze the output of the code and summarize the results.\n"
         "4. **Final Answer**: Provide a concise conclusion or final result.\n\n"
-        f"Task: {task}"
+        f"Task: {{task}}"
 
 """
 
@@ -232,7 +254,24 @@ def ragent_reasoning(prompt: str, history: list[dict], max_tokens: int = 2048, t
          response += token
          yield response
 
-# Gradio UI configuration
+# ------------------------------------------------------------------------------
+# New Phi-4 Multimodal Feature (Image & Audio)
+# ------------------------------------------------------------------------------
+# Define prompt structure for Phi-4
+phi4_user_prompt = '<|user|>'
+phi4_assistant_prompt = '<|assistant|>'
+phi4_prompt_suffix = '<|end|>'
+
+# Load Phi-4 multimodal model and processor using unique variable names
+phi4_model_path = "microsoft/Phi-4-multimodal-instruct"
+phi4_processor = AutoProcessor.from_pretrained(phi4_model_path, trust_remote_code=True)
+phi4_model = AutoModelForCausalLM.from_pretrained(
+    phi4_model_path,
+    device_map="auto",
+    torch_dtype="auto",
+    trust_remote_code=True,
+    _attn_implementation="eager",
+)
 
 DESCRIPTION = """
 # Agent Dino 🌠 """
@@ -306,7 +345,7 @@ def clean_chat_history(chat_history):
     return cleaned
 
 # Stable Diffusion XL Pipeline for Image Generation 
-#Model In Use : SG161222/RealVisXL_V5.0_Lightning
+# Model In Use : SG161222/RealVisXL_V5.0_Lightning
 
 MODEL_ID_SD = os.getenv("MODEL_VAL_PATH")  # SDXL Model repository path via env variable 
 MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "4096"))
@@ -338,6 +377,7 @@ def save_image(img: Image.Image) -> str:
     return unique_name
 
 @spaces.GPU(duration=60, enable_queue=True)
+# SG161222/RealVisXL_V5.0_Lightning
 def generate_image_fn(
     prompt: str,
     negative_prompt: str = "",
@@ -424,7 +464,7 @@ def detect_objects(image: np.ndarray):
     
     return Image.fromarray(annotated_image)
 
-# Chat Generation Function with support for @tts, @image, @3d, @web, @rAgent, and @yolo commands
+# Chat Generation Function with support for @tts, @image, @3d, @web, @rAgent, @yolo, and now @phi4 commands
 
 @spaces.GPU
 def generate(
@@ -442,8 +482,9 @@ def generate(
       - "@image": triggers image generation using the SDXL pipeline.
       - "@3d": triggers 3D model generation using the ShapE pipeline.
       - "@web": triggers a web search or webpage visit.
-      - "@rAgent": initiates a reasoning chain using Llama mode OpenAI.
+      - "@rAgent": initiates a reasoning chain using Llama mode.
       - "@yolo": triggers object detection using YOLO.
+      - **"@phi4": triggers multimodal (image/audio) processing using the Phi-4 model.**
     """
     text = input_dict["text"]
     files = input_dict.get("files", [])
@@ -451,7 +492,7 @@ def generate(
     # --- 3D Generation branch ---
     if text.strip().lower().startswith("@3d"):
         prompt = text[len("@3d"):].strip()
-        yield "🌀 Hold tight, generating a 3D mesh GLB file....."
+        yield progress_bar_html("Processing 3D Mesh Generation")
         glb_path, used_seed = generate_3d_fn(
             prompt=prompt,
             seed=1,
@@ -460,6 +501,7 @@ def generate(
             randomize_seed=True,
         )
         # Copy the GLB file to a static folder.
+        yield progress_bar_html("Finalizing 3D Mesh Generation")
         static_folder = os.path.join(os.getcwd(), "static")
         if not os.path.exists(static_folder):
             os.makedirs(static_folder)
@@ -473,7 +515,7 @@ def generate(
     # --- Image Generation branch ---
     if text.strip().lower().startswith("@image"):
         prompt = text[len("@image"):].strip()
-        yield "🪧 Generating image..."
+        yield progress_bar_html("Generating Image")
         image_paths, used_seed = generate_image_fn(
             prompt=prompt,
             negative_prompt="",
@@ -496,14 +538,14 @@ def generate(
         # If the command starts with "visit", then treat the rest as a URL
         if web_command.lower().startswith("visit"):
             url = web_command[len("visit"):].strip()
-            yield "🌍 Visiting webpage..."
+            yield progress_bar_html("Visiting Webpage")
             visitor = VisitWebpageTool()
             content = visitor.forward(url)
             yield content
         else:
             # Otherwise, treat the rest as a search query.
             query = web_command
-            yield "🧤 Performing a web search ..."
+            yield progress_bar_html("Performing Web Search")
             searcher = DuckDuckGoSearchTool()
             results = searcher.forward(query)
             yield results
@@ -512,7 +554,7 @@ def generate(
     # --- rAgent Reasoning branch ---
     if text.strip().lower().startswith("@ragent"):
         prompt = text[len("@ragent"):].strip()
-        yield "📝 Initiating reasoning chain using Llama mode..."
+        yield progress_bar_html("Processing Reasoning Chain")
         # Pass the current chat history (cleaned) to help inform the chain.
         for partial in ragent_reasoning(prompt, clean_chat_history(chat_history)):
             yield partial
@@ -520,7 +562,7 @@ def generate(
 
     # --- YOLO Object Detection branch ---
     if text.strip().lower().startswith("@yolo"):
-        yield "🔍 Running object detection with YOLO..."
+        yield progress_bar_html("Performing Object Detection")
         if not files or len(files) == 0:
             yield "Error: Please attach an image for YOLO object detection."
             return
@@ -537,6 +579,69 @@ def generate(
         np_image = np.array(pil_image)
         result_img = detect_objects(np_image)
         yield gr.Image(result_img)
+        return
+
+    # --- Phi-4 Multimodal branch (Image/Audio) with Streaming ---
+    if text.strip().lower().startswith("@phi4"):
+        question = text[len("@phi4"):].strip()
+        if not files:
+            yield "Error: Please attach an image or audio file for @phi4 multimodal processing."
+            return
+        if not question:
+            yield "Error: Please provide a question after @phi4."
+            return
+        # Determine input type (Image or Audio) from the first file
+        input_file = files[0]
+        try:
+            # If file is already a PIL Image, treat as image
+            if isinstance(input_file, Image.Image):
+                input_type = "Image"
+                file_for_phi4 = input_file
+            else:
+                # Try opening as image; if it fails, assume audio
+                try:
+                    file_for_phi4 = Image.open(input_file)
+                    input_type = "Image"
+                except Exception:
+                    input_type = "Audio"
+                    file_for_phi4 = input_file
+        except Exception:
+            input_type = "Audio"
+            file_for_phi4 = input_file
+
+        if input_type == "Image":
+            phi4_prompt = f'{phi4_user_prompt}<|image_1|>{question}{phi4_prompt_suffix}{phi4_assistant_prompt}'
+            inputs = phi4_processor(text=phi4_prompt, images=file_for_phi4, return_tensors='pt').to(phi4_model.device)
+        elif input_type == "Audio":
+            phi4_prompt = f'{phi4_user_prompt}<|audio_1|>{question}{phi4_prompt_suffix}{phi4_assistant_prompt}'
+            audio, samplerate = sf.read(file_for_phi4)
+            inputs = phi4_processor(text=phi4_prompt, audios=[(audio, samplerate)], return_tensors='pt').to(phi4_model.device)
+        else:
+            yield "Invalid file type for @phi4 multimodal processing."
+            return
+
+        # Initialize the streamer
+        streamer = TextIteratorStreamer(phi4_processor, skip_prompt=True, skip_special_tokens=True)
+        
+        # Prepare generation kwargs
+        generation_kwargs = {
+            **inputs,
+            "streamer": streamer,
+            "max_new_tokens": 200,
+            "num_logits_to_keep": 0,
+        }
+
+        # Start generation in a separate thread
+        thread = Thread(target=phi4_model.generate, kwargs=generation_kwargs)
+        thread.start()
+
+        # Stream the response
+        buffer = ""
+        yield progress_bar_html("Processing Phi-4 Multimodal")
+        for new_text in streamer:
+            buffer += new_text
+            time.sleep(0.01)  # Small delay to simulate real-time streaming
+            yield buffer
         return
 
     # --- Text and TTS branch ---
@@ -576,7 +681,7 @@ def generate(
         thread.start()
 
         buffer = ""
-        yield "🤔 Thinking..."
+        yield progress_bar_html("Processing with Qwen2VL OCR")
         for new_text in streamer:
             buffer += new_text
             buffer = buffer.replace("<|im_end|>", "")
@@ -604,6 +709,7 @@ def generate(
         t.start()
 
         outputs = []
+        yield progress_bar_html("Processing Chat Response")
         for new_text in streamer:
             outputs.append(new_text)
             yield "".join(outputs)
@@ -627,9 +733,12 @@ demo = gr.ChatInterface(
         gr.Slider(label="Repetition penalty", minimum=1.0, maximum=2.0, step=0.05, value=1.2),
     ],
     examples=[
-        ["@tts2 What causes rainbows to form?"],
+        ["@image A drawing of an man made out of hamburger, blue sky background, soft pastel colors"],
+        [{"text": "@phi4 Transcribe the audio to text.", "files": ["examples/harvard.wav"]}],
         ["@image Chocolate dripping from a donut"],
+        [{"text": "@phi4 Summarize the content", "files": ["examples/write.jpg"]}],
         ["@3d A birthday cupcake with cherry"],
+        ["@tts2 What causes rainbows to form?"],
         [{"text": "Summarize the letter", "files": ["examples/1.png"]}],
         [{"text": "@yolo", "files": ["examples/yolo.jpeg"]}],
         ["@rAgent Explain how a binary search algorithm works."],
@@ -641,7 +750,12 @@ demo = gr.ChatInterface(
     description=DESCRIPTION,
     css=css,
     fill_height=True,
-    textbox=gr.MultimodalTextbox(label="Query Input", file_types=["image"], file_count="multiple", placeholder="@tts1-♀, @tts2-♂, @image-image gen, @3d-3d mesh gen, @rAgent-coding, @web-websearch, @yolo-object detection, default-{text gen}{image-text-text}"),
+    textbox=gr.MultimodalTextbox(
+        label="Query Input", 
+        file_types=["image", "audio"],
+        file_count="multiple", 
+        placeholder="‎ @tts1, @tts2, @image, @3d, @phi4 [image, audio], @rAgent, @web, @yolo, default [plain text]"
+    ),
     stop_btn="Stop Generation",
     multimodal=True,
 )
