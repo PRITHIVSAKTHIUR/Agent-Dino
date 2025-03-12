@@ -8,6 +8,7 @@ ultralytics
 peft
 huggingface_hub
 git+https://github.com/huggingface/transformers.git
+#if Gemma3-4B in Use, Install git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3
 openai==1.58.1
 sentencepiece
 pandas
