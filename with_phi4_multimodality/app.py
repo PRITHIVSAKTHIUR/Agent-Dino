@@ -748,4 +748,4 @@ from fastapi.staticfiles import StaticFiles
 demo.app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
-    demo.queue(max_size=20).launch(share=True)
+    demo.queue(max_size=20).launch(mcp_server=True, share=True)
