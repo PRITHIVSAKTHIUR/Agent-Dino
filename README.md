@@ -1,5 +1,4 @@
 ## Dino: The Minimalist Multipurpose Chat System 🌠
-Agent-Dino : https://huggingface.co/spaces/prithivMLmods/Agent-Dino
 
 By default, it performs the following tasks:  
 {Text-to-Text Generation},  {Image-Text-Text Generation}
